@@ -41,7 +41,7 @@ def is_valid(peptide):
 def get_valid_sequences():
     peptides = pd.DataFrame()
     all_file_names = []
-    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "/dbaasp/*.json")):
+    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "dbaasp/*.json")):
         filename = j_file[j_file.rfind("/") + 1:]
         with open(j_file, encoding='utf-8') as train_file:
             try:
@@ -195,7 +195,7 @@ def get_stats():
     all_file_names = []
     total = 0
     unusual_amino_acids = 0
-    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "/dbaasp/*.json")):
+    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "dbaasp/*.json")):
         total += 1
         filename = j_file[j_file.rfind("/") + 1:]
         with open(j_file, encoding='utf-8') as train_file:
@@ -354,7 +354,7 @@ def get_satpdb(train_file):
 
 def get_satpdbs():
     dict_train = {}
-    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "/satpdb/source/*.html")):
+    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "satpdb/source/*.html")):
         with open(j_file, encoding='utf-8') as train_file:
             try:
                 name, record = get_satpdb(train_file)
@@ -363,7 +363,7 @@ def get_satpdbs():
                 print(f'error loading html:{j_file}')
 
     peptides = pd.DataFrame.from_dict(dict_train, orient='index')
-    peptides.to_csv(os.path.join(cfg.DATA_ROOT,"/satpdb/satpdb.csv"))
+    peptides.to_csv(os.path.join(cfg.DATA_ROOT,"satpdb/satpdb.csv"))
     return peptides
 
 
@@ -439,7 +439,7 @@ print('8. Combining all positive sequences for AMP activity')
 # ampep_pos = ampep_pos.drop(columns=['label'])
 # ampep_pos.seq = ampep_pos.seq.apply(lambda x: "".join(x.split()))  # remove the space from the seq
 
-ampep_pos = get_ampep(os.path.join(cfg.DATA_ROOT, "/ampep/train_AMP_3268.fasta"))
+ampep_pos = get_ampep(os.path.join(cfg.DATA_ROOT, "ampep/train_AMP_3268.fasta"))
 
 ampep_pos = get_seq_len_less_than(ampep_pos, 50)
 ampep_pos["source"] = ["ampep_pos"]*len(ampep_pos)
@@ -486,9 +486,9 @@ dbaasp_more_than_100["seq"] = all_activity_more_than(df, 100)["seq"]
 # ampep  negative and uniprot sequences
 print('9. Collecting uniprot sequences as unknown label')
 col_Names = ["seq"]
-uniprot_unk1 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/uniprot/uniprot_reviewed_yes_l1-80.txt"), names=col_Names)
+uniprot_unk1 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"uniprot/uniprot_reviewed_yes_l1-80.txt"), names=col_Names)
 col_Names = ["seq"]
-uniprot_unk2 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/uniprot/uniprot_reviewed_no_l1-80.txt"), names=col_Names)
+uniprot_unk2 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"uniprot/uniprot_reviewed_no_l1-80.txt"), names=col_Names)
 uniprot_unk = pd.concat([uniprot_unk1, uniprot_unk2]).drop_duplicates()
 uniprot_unk = get_seq_len_less_than(uniprot_unk, 50)
 print ("--> uniprot_unk", len(uniprot_unk))
@@ -504,7 +504,7 @@ print('10. Collecting negative sequences for AMP activity ...')
 # ampep_neg.seq = ampep_neg.seq.apply(lambda x: "".join(x.split()))  # remove the space from the seq
 # #ampep_neg.columns = ['']
 # ampep_neg = ampep_neg.drop(columns=['label'])
-ampep_neg = get_ampep(os.path.join(cfg.DATA_ROOT, "/ampep/train_nonAMP_9777.fasta"))
+ampep_neg = get_ampep(os.path.join(cfg.DATA_ROOT, "ampep/train_nonAMP_9777.fasta"))
 ampep_neg = get_seq_len_less_than(ampep_neg, 50)
 #print ("----------")
 print ("--> Parsing ampep negative sequences, number of ampep_neg = ", len(ampep_neg))
@@ -556,11 +556,11 @@ print('**** Creating Toxicity datasets ****')
 # toxinpred is already len <=35.
 col_Names = ["seq"]
 print('1. Collecting Toxicity negative samples')
-toxinpred_neg1 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/toxicity/nontoxic_trembl_toxinnpred.txt"), names=col_Names)
+toxinpred_neg1 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"toxicity/nontoxic_trembl_toxinnpred.txt"), names=col_Names)
 print ("--> toxinpred_neg1 number = ", len(toxinpred_neg1))
 toxinpred_neg1["source2"] = ["toxinpred_neg_tr"] * len(toxinpred_neg1)
 toxinpred_neg1 = toxinpred_neg1[["seq", "source2"]]
-toxinpred_neg2 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/toxicity/nontoxic_swissprot_toxinnpred.txt"), names=col_Names)
+toxinpred_neg2 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"toxicity/nontoxic_swissprot_toxinnpred.txt"), names=col_Names)
 print ("--> toxinpred_neg2 number = ", len(toxinpred_neg2))
 toxinpred_neg2["source2"] = ["toxinpred_neg_sp"] * len(toxinpred_neg2)
 toxinpred_neg2 = toxinpred_neg2[["seq", "source2"]]
