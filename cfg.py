@@ -335,7 +335,7 @@ amp_sample_prob_factors = {
 amp = Bunch(
     data_kwargs=Bunch(
         lower=False,
-        data_path=DATA_ROOT + 'amp/' if not 'DATA_PATH_AMP' in os.environ else os.environ['DATA_PATH_AMP'],
+        data_path=DATA_ROOT if not 'DATA_PATH_AMP' in os.environ else os.environ['DATA_PATH_AMP'],
         data_format='csv',
         csv_files=['unlab.csv', 'amp_lab.csv', 'tox_lab.csv'],
         iteratorspecs=Bunch(
@@ -359,8 +359,8 @@ amp = Bunch(
         dataset_lab='amp_labeled',
     ),
     attributes=[
-        ('amp', {'amp_negnc': 0, 'amp_negc': 0, 'amp_posc': 1, 'amp_posnc': 1, 'na': -1}),
-        ('tox', {'tox_negc': 0, 'tox_negnc': 0, 'tox_posc': 1, 'tox_posnc': 1, 'na': -1}),
+        ('amp', {'amp_negnc': 0, 'amp_negc': 0, 'amp_pos': 1,'amp_posc': 1, 'amp_posnc': 1, 'na': -1}),
+        ('tox', {'tox_negc': 0, 'tox_negnc': 0, 'tox_pos': 1,'tox_posc': 1, 'tox_posnc': 1, 'na': -1}),
         ('sol', {'sol_neg': 0, 'sol_pos': 1, 'na': -1}),
         ('anticancer', {'anticancer': 1, 'na': -1}),
         ('antihyper', {'antihyper': 1, 'na': -1}),
