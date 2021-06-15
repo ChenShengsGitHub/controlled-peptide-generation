@@ -5,48 +5,61 @@ import numpy as np
 import glob
 import ast
 from modlamp.descriptors import *
+import re
+import cfg
+import os
 
 
 def not_in_range(seq):
-    if len(seq) < 1 or len(seq) > 80:
+    if seq is None or len(seq) < 1 or len(seq) > 80:
         return True
     return False
 
 
 def bad_terminus(peptide):
-    if peptide.nTerminus[0] != "#" or peptide.cTerminus[0] != "#":
+    if peptide.nTerminus[0] is not None or peptide.cTerminus[0] is not None:
         return True
     return False
 
 
 def is_valid(peptide):
-    seq = peptide.seq[0]
-    if not seq.isupper():
+    try:
+        seq = peptide.seq[0]
+        if not seq.isupper():
+            return False
+        if bad_terminus(peptide):
+            return False
+        if not_in_range(seq):
+            return False
+        if seq.find("X") != -1:
+            return False
+        return True
+    except:
         return False
-    if bad_terminus(peptide):
-        return False
-    if not_in_range(seq):
-        return False
-    if seq.find("X") != -1:
-        return False
-    return True
 
 
 def get_valid_sequences():
     peptides = pd.DataFrame()
     all_file_names = []
-    for j_file in glob.glob("./data/dbaasp/*.json"):
+    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "/dbaasp/*.json")):
         filename = j_file[j_file.rfind("/") + 1:]
-        with open(j_file) as train_file:
-            dict_train = json.load(train_file)
-        if dict_train["peptideCard"].get("unusualAminoAcids") is not None:
+        with open(j_file, encoding='utf-8') as train_file:
+            try:
+                dict_tmp = json.load(train_file)
+                dict_tmp["seq"] = dict_tmp.pop("sequence")
+                dict_train = {}
+                dict_train["peptideCard"] = dict_tmp
+            except:
+                print(f'jsonLoad error!:{filename}')
+                continue
+        if dict_train["peptideCard"].get("unusualAminoAcids") != []:
             continue
         peptide = pd.DataFrame.from_dict(dict_train, orient='index')
         if is_valid(peptide):
             peptides = pd.concat([peptides, peptide])
             all_file_names.append(filename)
     peptides["filename"] = all_file_names
-    peptides.to_csv("valid_sequences.csv")
+    peptides.to_csv("./data/valid_sequences.csv")
     return peptides
 
 
@@ -56,8 +69,9 @@ def add_activity_list(peptides):
         try:
             activity_list = []
             for target in targets:
-                if target['unit'] == 'µM':  # µg/ml
+                if target['unit']['name'] == 'µM':  # µg/ml
                     try:
+                        con = target['concentration']
                         activity_list.append(target['concentration'])
                     except:
                         continue
@@ -75,7 +89,7 @@ def add_toxic_list(peptides):
         try:
             toxic_list = []
             for target in targets:
-                if target['unit'] == 'µM':  # µg/ml
+                if target['unit']['name'] == 'µM':  # µg/ml
                     try:
                         toxic_list.append(target['concentration'])
                     except:
@@ -150,7 +164,7 @@ def convert_units(peptides):
     peptides["converted_activity"] = converted_activity_all
     peptides["converted_toxic"] = converted_toxic_all
     print('--> Writing valid sequences with molecular weights converted to valid_sequences_with_mw_converted.csv')
-    peptides.to_csv("valid_sequences_with_mw_converted.csv")
+    peptides.to_csv("./data/valid_sequences_with_mw_converted.csv")
     return peptides
 
 
@@ -181,12 +195,19 @@ def get_stats():
     all_file_names = []
     total = 0
     unusual_amino_acids = 0
-    for j_file in glob.glob("./data/dbaasp/*.json"):
+    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "/dbaasp/*.json")):
         total += 1
         filename = j_file[j_file.rfind("/") + 1:]
-        with open(j_file) as train_file:
-            dict_train = json.load(train_file)
-        if dict_train["peptideCard"].get("unusualAminoAcids") is not None:
+        with open(j_file, encoding='utf-8') as train_file:
+            try:
+                dict_tmp = json.load(train_file)
+                dict_tmp["seq"] = dict_tmp.pop("sequence")
+                dict_train = {}
+                dict_train["peptideCard"] = dict_tmp
+            except:
+                print(f'jsonLoad error!:{filename}')
+                continue
+        if dict_train["peptideCard"].get("unusualAminoAcids") != []:
             unusual_amino_acids += 1
             continue
         peptide = pd.DataFrame.from_dict(dict_train, orient='index')
@@ -210,7 +231,7 @@ has_toxicity = [item for item in peptide_all_converted.toxic_list if item != []]
 print ("--> Number of valid sequences with toxicity:", len(has_toxicity))
 
 ################################################################
-df = pd.read_csv("valid_sequences_with_mw_converted.csv")
+df = pd.read_csv("./data/valid_sequences_with_mw_converted.csv")
 print (len(df))
 # df.head()  # default df: is dbaasp
 
@@ -300,11 +321,54 @@ def remove_df(df1, df2):
 df = add_min_max_mean(df)
 df_dbaasp = df[["seq", "activity_list", "converted_activity",
                 "min_activity", "max_activity", "avg_activity"]]
-df_dbaasp.to_csv("all_valid_dbaasp.csv")
+df_dbaasp.to_csv("./data/all_valid_dbaasp.csv")
 
 # 3) Overlapping sequences between DBAASP and Satpdb  with AMP activity <10 ug/ml
 print('4. Finding overlapping sequences between DBAASP and Satpdb with AMP activity <10 ug/ml ...')
-df_satpdb = pd.read_csv("./data/satpdb/satpdb.csv")
+
+
+def get_satpdb(train_file):
+    for line in train_file.readlines():
+        if "Peptide ID" in line:
+            record = {}
+            line = re.sub(u"\\<.*?\\>", "", line)
+            peptideId = line.split('Peptide ID')[1].split('Sequence')[0]
+            record['Peptide.ID'] = peptideId
+            record['Sequence'] = line.split('Sequence')[1].split('C-terminal modification')[0]
+            record['C.terminal.modification'] = line.split('C-terminal modification')[1].split('N-terminal modification')[0]
+            record['N.terminal.modification'] = line.split('N-terminal modification')[1].split('Peptide Type')[0]
+            record['Peptide.Type'] = line.split('Peptide Type')[1].split('Type of Modification')[0]
+            record['Type.of.Modification'] = line.split('Type of Modification')[1].split('Source (Databases)')[0]
+            record['Source..Databases.'] = line.split('Source (Databases)')[1].split('Link to Source')[0]
+            record['Link.to.Source'] = line.split('Link to Source')[1].split('Major Functions')[0]
+            record['Major.Functions'] = line.split('Major Functions')[1].split('Sub-functions')[0]
+            record['Sub.functions'] = line.split('Sub-functions')[1].split('Additional Info')[0]
+            record['Additional.Info'] = line.split('Additional Info')[1].split('Helix (%)')[0]
+            record['Helix'] = line.split('Helix (%)')[1].split('Strand (%)')[0]
+            record['Strand'] = line.split('Strand (%)')[1].split('Coil (%)')[0]
+            record['Coil'] = line.split('Coil (%)')[1].split('Turn (%)')[0]
+            record['Turn'] = line.split('Turn (%)')[1].split('DSSP states')[0]
+            record['DSSP.states'] = line.split('DSSP states')[1].split('Tertiary Structure')[0]
+            return peptideId, record
+
+
+def get_satpdbs():
+    dict_train = {}
+    for j_file in glob.glob(os.path.join(cfg.DATA_ROOT, "/satpdb/source/*.html")):
+        with open(j_file, encoding='utf-8') as train_file:
+            try:
+                name, record = get_satpdb(train_file)
+                dict_train[name] = record
+            except:
+                print(f'error loading html:{j_file}')
+
+    peptides = pd.DataFrame.from_dict(dict_train, orient='index')
+    peptides.to_csv(os.path.join(cfg.DATA_ROOT,"/satpdb/satpdb.csv"))
+    return peptides
+
+
+df_satpdb = get_satpdbs()
+#df_satpdb = pd.read_csv("./data/satpdb/satpdb.csv")
 df_satpdb = df_satpdb.rename(index=str, columns={"Sequence": "seq",
                                                  "C.terminal.modification": "cterminal",
                                                  "N.terminal.modification": "nterminal",
@@ -329,7 +393,7 @@ df_overlap["avg_activity"] = mean_col
 df_overlap_all = df_overlap[["seq", "activity_list", "converted_activity",
                              "min_activity", "max_activity", "avg_activity"]]
 print('5. Writing the overlap sequences to all_overlap.csv')
-df_overlap_all.to_csv("all_overlap.csv")
+df_overlap_all.to_csv("./data/all_overlap.csv")
 
 # length for all <=50
 #
@@ -356,22 +420,33 @@ print ("--> Number of positive seq in satpdb", len(satpdb_pos))
 satpdb_pos1.seq = satpdb_pos1.seq.apply(lambda x: "".join(x.split()))  # remove the space from the seq
 satpdb_pos1 = satpdb_pos1.drop_duplicates('seq')
 print('--> Writing to satpdb_pos.csv')
-satpdb_pos1.to_csv("satpdb_pos.csv", index=False, header=False)
+satpdb_pos1.to_csv("./data/satpdb_pos.csv", index=False, header=False)
+
+def get_ampep(path):
+    ampeps = {}
+    ampeps['seq'] = []
+    for line in open(path).readlines():
+        if not line.startswith('>'):
+            ampeps['seq'].append(line.strip())
+    return pd.DataFrame.from_dict(ampeps)
 
 
 # combine all positive sequences
 print('8. Combining all positive sequences for AMP activity')
-col_Names = ["seq", "label"]
-print('--> Parsing ampep sequences')
-ampep_pos = pd.read_csv("./data/ampep/pos_ampep_l1-80.csv", names=col_Names)
-ampep_pos = ampep_pos.drop(columns=['label'])
-ampep_pos.seq = ampep_pos.seq.apply(lambda x: "".join(x.split()))  # remove the space from the seq
+# col_Names = ["seq", "label"]
+# print('--> Parsing ampep sequences')
+# ampep_pos = pd.read_csv("./data_processing/data/ampep/pos_ampep_l1-80.csv", names=col_Names)
+# ampep_pos = ampep_pos.drop(columns=['label'])
+# ampep_pos.seq = ampep_pos.seq.apply(lambda x: "".join(x.split()))  # remove the space from the seq
+
+ampep_pos = get_ampep(os.path.join(cfg.DATA_ROOT, "/ampep/train_AMP_3268.fasta"))
+
 ampep_pos = get_seq_len_less_than(ampep_pos, 50)
 ampep_pos["source"] = ["ampep_pos"]*len(ampep_pos)
 ampep_pos = ampep_pos[["seq", "source"]]
 print('--> Writing to ampep_pos.csv')
 print ("--> Number of ampep_pos", len(ampep_pos))
-ampep_pos.to_csv("ampep_pos.csv", index=False, header=False)
+ampep_pos.to_csv("./data/ampep_pos.csv", index=False, header=False)
 
 print('--> Writing dbaasp sequences')
 print ("--> Number of all seqs dbaasp", len(df))
@@ -399,7 +474,7 @@ amp_pos = amp_pos[~amp_pos.seq.str.contains("-")]
 amp_pos = amp_pos[~amp_pos.seq.str.contains(r'[0-9]')]
 #amp_pos.seq = amp_pos.seq.apply(lambda x: " ".join(x)) # remove the space from the seq
 print('--> Writing amp_pos.csv combined from dbaasp, ampep, satpdb positive sequences')
-amp_pos.to_csv("amp_pos.csv", index=False, header=False)
+amp_pos.to_csv("./data/amp_pos.csv", index=False, header=False)
 
 
 dbaasp_more_than_100 = pd.DataFrame()
@@ -411,9 +486,9 @@ dbaasp_more_than_100["seq"] = all_activity_more_than(df, 100)["seq"]
 # ampep  negative and uniprot sequences
 print('9. Collecting uniprot sequences as unknown label')
 col_Names = ["seq"]
-uniprot_unk1 = pd.read_csv("./data/uniprot/uniprot_reviewed_yes_l1-80.txt", names=col_Names)
+uniprot_unk1 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/uniprot/uniprot_reviewed_yes_l1-80.txt"), names=col_Names)
 col_Names = ["seq"]
-uniprot_unk2 = pd.read_csv("./data/uniprot/uniprot_reviewed_no_l1-80.txt", names=col_Names)
+uniprot_unk2 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/uniprot/uniprot_reviewed_no_l1-80.txt"), names=col_Names)
 uniprot_unk = pd.concat([uniprot_unk1, uniprot_unk2]).drop_duplicates()
 uniprot_unk = get_seq_len_less_than(uniprot_unk, 50)
 print ("--> uniprot_unk", len(uniprot_unk))
@@ -421,14 +496,15 @@ uniprot_unk["source"] = ["uniprot"] * len(uniprot_unk)
 uniprot_unk["source2"] = uniprot_unk["source"]
 uniprot_unk['source'] = uniprot_unk['source'].map({'uniprot': 'unk'})
 print('--> Writing uniprot_unk.csv ')
-uniprot_unk.to_csv("uniprot_unk.csv", index=False, header=False)
+uniprot_unk.to_csv("./data/uniprot_unk.csv", index=False, header=False)
 
 print('10. Collecting negative sequences for AMP activity ...')
-col_Names = ["seq", "label"]
-ampep_neg = pd.read_csv("./data/ampep/neg_ampep_l1-80.csv", names=col_Names)
-ampep_neg.seq = ampep_neg.seq.apply(lambda x: "".join(x.split()))  # remove the space from the seq
-#ampep_neg.columns = ['']
-ampep_neg = ampep_neg.drop(columns=['label'])
+# col_Names = ["seq", "label"]
+# ampep_neg = pd.read_csv("./data/ampep/neg_ampep_l1-80.csv", names=col_Names)
+# ampep_neg.seq = ampep_neg.seq.apply(lambda x: "".join(x.split()))  # remove the space from the seq
+# #ampep_neg.columns = ['']
+# ampep_neg = ampep_neg.drop(columns=['label'])
+ampep_neg = get_ampep(os.path.join(cfg.DATA_ROOT, "/ampep/train_nonAMP_9777.fasta"))
 ampep_neg = get_seq_len_less_than(ampep_neg, 50)
 #print ("----------")
 print ("--> Parsing ampep negative sequences, number of ampep_neg = ", len(ampep_neg))
@@ -449,7 +525,7 @@ combined_neg = pd.concat([dbaasp_more_than_100, ampep_neg]).drop_duplicates('seq
 # satpdb_pos = remove_df(valid_df_satpdb["seq"].drop_duplicates(), overlap_neg["seq"])
 print ("--> combined_neg number = ", len(combined_neg))
 
-combined_neg.to_csv("dbaasp_more_than100_combined_ampep_neg.csv", index=False, header=False)  # not multiplied the samples.
+combined_neg.to_csv("./data/dbaasp_more_than100_combined_ampep_neg.csv", index=False, header=False)  # not multiplied the samples.
 
 common = amp_pos.merge(combined_neg, on=['seq'])
 # print(common.head())
@@ -471,7 +547,7 @@ combine_neg1 = combined_neg1[~combined_neg1.seq.str.contains('[a-z]')]
 #combined_neg1=combined_neg1[~combined_neg1.seq.str.contains("*")]
 combined_neg1 = combined_neg1[~combined_neg1.seq.str.contains(r'[0-9]')]
 print('--> Writing combined negative sequences collected from DBAASP and AMPEP to amp_neg.csv')
-combined_neg1.to_csv("amp_neg.csv", index=False, header=False)    # not multiplied the samples.
+combined_neg1.to_csv("./data/amp_neg.csv", index=False, header=False)    # not multiplied the samples.
 
 # Toxicity data
 print('**** Creating Toxicity datasets ****')
@@ -480,11 +556,11 @@ print('**** Creating Toxicity datasets ****')
 # toxinpred is already len <=35.
 col_Names = ["seq"]
 print('1. Collecting Toxicity negative samples')
-toxinpred_neg1 = pd.read_csv("./data/toxicity/nontoxic_trembl_toxinnpred.txt", names=col_Names)
+toxinpred_neg1 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/toxicity/nontoxic_trembl_toxinnpred.txt"), names=col_Names)
 print ("--> toxinpred_neg1 number = ", len(toxinpred_neg1))
 toxinpred_neg1["source2"] = ["toxinpred_neg_tr"] * len(toxinpred_neg1)
 toxinpred_neg1 = toxinpred_neg1[["seq", "source2"]]
-toxinpred_neg2 = pd.read_csv("./data/toxicity/nontoxic_swissprot_toxinnpred.txt", names=col_Names)
+toxinpred_neg2 = pd.read_csv(os.path.join(cfg.DATA_ROOT,"/toxicity/nontoxic_swissprot_toxinnpred.txt"), names=col_Names)
 print ("--> toxinpred_neg2 number = ", len(toxinpred_neg2))
 toxinpred_neg2["source2"] = ["toxinpred_neg_sp"] * len(toxinpred_neg2)
 toxinpred_neg2 = toxinpred_neg2[["seq", "source2"]]
@@ -529,7 +605,7 @@ combined_toxic_pos = combined_toxic_pos[~combined_toxic_pos.seq.str.contains('[a
 combined_toxic_pos = combined_toxic_pos[~combined_toxic_pos.seq.str.contains("-")]
 #combined_toxic_pos=combined_toxic_pos[~combined_toxic_pos.seq.str.contains("*")]
 combined_toxic_pos = combined_toxic_pos[~combined_toxic_pos.seq.str.contains(r'[0-9]')]
-combined_toxic_pos.to_csv("toxic_pos.csv", index=False, header=False)
+combined_toxic_pos.to_csv("./data/toxic_pos.csv", index=False, header=False)
 print ('--> combined_toxic_pos number = ', len(combined_toxic_pos))
 
 dbaasp_neg = all_toxic_more_than(df, 250)
@@ -543,7 +619,7 @@ toxinpred_neg = toxinpred_neg[["seq",  "source", "source2"]]
 
 combined_toxic_neg = pd.concat([dbaasp_neg, toxinpred_neg]).drop_duplicates('seq')
 combined_toxic_neg = combined_toxic_neg[["seq", "source", "source2"]]
-combined_toxic_neg.to_csv("toxic_neg_nofilter.csv", index=False, header=False)
+combined_toxic_neg.to_csv("./data/toxic_neg_nofilter.csv", index=False, header=False)
 print ('--> combined_toxic_neg number = ', len(combined_toxic_neg))
 
 commont = combined_toxic_pos.merge(combined_toxic_neg, on=['seq'])
@@ -560,45 +636,46 @@ combined_negt1 = combined_negt1[~combined_negt1.seq.str.contains('[a-z]')]
 combined_negt1 = combined_negt1[~combined_negt1.seq.str.contains("-")]
 combined_negt1 = combined_negt1[~combined_negt1.seq.str.contains(r'[0-9]')]
 combined_negt1 = combined_negt1[['seq', 'source', 'source2']]
-combined_negt1.to_csv("toxic_neg.csv", index=False, header=False)  # not multiplied the samples.
+combined_negt1.to_csv("./data/toxic_neg.csv", index=False, header=False)  # not multiplied the samples.
 
 
 ampseq = pd.concat([amp_pos, combined_neg1]).drop_duplicates('seq')
 ampseq.seq = ampseq.seq.apply(lambda x: " ".join(x))  # remove the space from the seq
 ampseq = ampseq.sample(frac=1)
 ampseq.columns = ['text', 'amp', 'source']
-ampseq.to_csv("amp_lab_.csv", index=False, header=True)
+ampseq.to_csv("./data/amp_lab.csv", index=False, header=True)
 
 toxseq = pd.concat([combined_toxic_pos, combined_negt1]).drop_duplicates('seq')
 toxseq.seq = toxseq.seq.apply(lambda x: " ".join(x))  # remove the space from the seq
 toxseq = toxseq.sample(frac=1)
 toxseq.columns = ['text', 'tox', 'source']
-toxseq.to_csv("tox_lab_.csv", index=False, header=True)
+toxseq.to_csv("./data/tox_lab.csv", index=False, header=True)
 
-# Solubility dataset creation
-print('***** Creating solubility dataset ***** ')
-col_Names = ["seq", "source", "source2"]
-sol_train = pd.read_csv("./data/solubility/sol_lab_train.csv", names=col_Names)
-sol_val = pd.read_csv("./data/solubility/sol_lab_valid.csv", names=col_Names)
-sol_test = pd.read_csv("./data/solubility/sol_lab_test.csv", names=col_Names)
-
-solseq = pd.concat([sol_train, sol_val, sol_test])
-solseq_short = solseq[solseq['seq'].apply(lambda x: len(x) <= 50)]
-solseq = solseq_short
-solseq.seq = solseq.seq.apply(lambda x: " ".join(x))  # remove the space from the seq
-solseq = solseq.sample(frac=1)
-solseq.columns = ['text', 'sol', 'source']
-print('1. Writing solubility labeled data to sol_lab.csv')
-solseq.to_csv("sol_lab_.csv", index=False, header=True)
+# # Solubility dataset creation
+# print('***** Creating solubility dataset ***** ')
+# col_Names = ["seq", "source", "source2"]
+# sol_train = pd.read_csv("./data/solubility/sol_lab_train.csv", names=col_Names)
+# sol_val = pd.read_csv("./data/solubility/sol_lab_valid.csv", names=col_Names)
+# sol_test = pd.read_csv("./data/solubility/sol_lab_test.csv", names=col_Names)
+#
+# solseq = pd.concat([sol_train, sol_val, sol_test])
+# solseq_short = solseq[solseq['seq'].apply(lambda x: len(x) <= 50)]
+# solseq = solseq_short
+# solseq.seq = solseq.seq.apply(lambda x: " ".join(x))  # remove the space from the seq
+# solseq = solseq.sample(frac=1)
+# solseq.columns = ['text', 'sol', 'source']
+# print('1. Writing solubility labeled data to sol_lab.csv')
+# solseq.to_csv("./data/sol_lab.csv", index=False, header=True)
 
 uniprot_unk.columns = ['text', 'source', 'source2']
 ampseq.columns = ['text', 'source', 'source2']
 toxseq.columns = ['text', 'source', 'source2']
-solseq.columns = ['text', 'source', 'source2']
+# solseq.columns = ['text', 'source', 'source2']
 ampseq.text = ampseq.text.apply(lambda x: "".join(x.split()))  # remove the space from the seq
 toxseq.text = toxseq.text.apply(lambda x: "".join(x.split()))
-solseq.text = solseq.text.apply(lambda x: "".join(x.split()))
-allseq = pd.concat([uniprot_unk, ampseq, toxseq, solseq]).drop_duplicates('text')
+# solseq.text = solseq.text.apply(lambda x: "".join(x.split()))
+# allseq = pd.concat([uniprot_unk, ampseq, toxseq, solseq]).drop_duplicates('text')
+allseq = pd.concat([uniprot_unk, ampseq, toxseq]).drop_duplicates('text')
 #print (len(allseq))
 allseq = allseq[allseq['text'].str.contains('^[A-Z]+')]
 allseq = allseq[~allseq.text.str.contains("B")]
@@ -614,4 +691,4 @@ allseq.text = allseq.text.apply(lambda x: " ".join(x))
 allseq = allseq.sample(frac=1)
 allseq = allseq[['text', 'source', 'source2']]
 allseq.columns = ['text', 'lab_dummy', 'source']
-allseq.to_csv("unlab_.csv", index=False, header=True)
+allseq.to_csv("./data/unlab.csv", index=False, header=True)

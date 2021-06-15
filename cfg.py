@@ -321,7 +321,7 @@ def _set_dataset(dataset):
 
 
 # set path to your data
-DATA_ROOT = './PATH_TO_DATA/'
+DATA_ROOT = '/home/chens/data/'
 
 amp_sample_prob_factors = {
     'amp=amp_posc': 20, 'amp=amp_posnc': 10,
@@ -337,8 +337,7 @@ amp = Bunch(
         lower=False,
         data_path=DATA_ROOT + 'amp/' if not 'DATA_PATH_AMP' in os.environ else os.environ['DATA_PATH_AMP'],
         data_format='csv',
-        csv_files=['unlab.csv', 'amp_lab.csv', 'tox_lab.csv', 'sol_lab.csv', \
-                   'anticancer.csv', 'antihypertensive.csv', 'cell-cell.csv'],
+        csv_files=['unlab.csv', 'amp_lab.csv', 'tox_lab.csv'],
         iteratorspecs=Bunch(
             train_vae=Bunch(subset=['split=train'], weighted_random_sample=True,
                             sample_prob_factors=amp_sample_prob_factors),
